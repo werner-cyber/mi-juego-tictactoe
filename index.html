@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Werner WX1 - Tic-Tac-Toe Multijugador</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⭕</text></svg>">
+    
+    <!-- Socket.io -->
+    <script src="/socket.io/socket.io.js"></script>
+    
+    <style>
+        /* TODO TU CÓDIGO CSS ORIGINAL SE MANTIENE IGUAL */
+        :root {
+            --neon-cyan: #00e6e6;
+            --neon-pink: #ff3366;
+            --neon-blue: #33aaff;
+            --neon-purple: #cc33ff;
+            --dark-bg: #0c152a;
+            --medium-bg: #1f2e4a;
+            --cell-bg: #2c2c2c;
+            --text-color: #e0e0e0;
+            --shadow-intensity: 0.3;
+        }
+        
+        /* ... (todo tu CSS original aquí) ... */
+        
+    </style>
+</head>
+<body>
+    <!-- TODO TU HTML ORIGINAL SE MANTIENE -->
+    <div id="pantalla-inicio" class="pantalla">
+        <h1><i class="fas fa-robot"></i> Werner WX1</h1>
+        <h2>Ingresa tu nombre para jugar:</h2>
+        <input type="text" id="nombre-usuario" placeholder="Tu nombre aquí" autocomplete="off" maxlength="15">
+        
+        <div class="selector-modo">
+            <button class="btn-modo" data-modo="multijugador">Multijugador Online</button>
+        </div>
+        
+        <button id="btn-jugar" class="btn-principal">Jugar <i class="fas fa-play"></i></button>
+    </div>
+
+    <div id="pantalla-salas" class="pantalla">
+        <h2><i class="fas fa-users"></i> Salas Multijugador</h2>
+        
+        <div style="margin: 20px 0;">
+            <button id="btn-crear-sala" class="btn-principal">Crear Nueva Sala</button>
+        </div>
+        
+        <div style="margin: 20px 0;">
+            <h3>Unirse a Sala Existente</h3>
+            <input type="text" id="codigo-sala" placeholder="Código de sala" style="padding: 10px; margin: 10px;">
+            <button id="btn-unirse-sala" class="btn-principal">Unirse</button>
+        </div>
+        
+        <button id="btn-volver-inicio" class="btn-juego">Volver al Inicio</button>
+    </div>
+
+    <div id="pantalla-juego" class="pantalla">
+        <h1><i class="fas fa-robot"></i> Werner WX1 Multijugador</h1>
+        
+        <div class="puntuacion">
+            <div class="puntuacion-jugador activo" id="jugador-x">
+                <p id="nombre-x">Jugador X</p>
+                <span>X</span>
+            </div>
+            <div class="puntuacion-jugador" id="jugador-o">
+                <p id="nombre-o">Jugador O</p>
+                <span>O</span>
+            </div>
+        </div>
+        
+        <div class="estado-juego" id="estado-juego">Esperando jugadores...</div>
+        
+        <div class="tablero">
+            <div class="celda" id="0">-</div>
+            <div class="celda" id="1">-</div>
+            <div class="celda" id="2">-</div>
+            <div class="celda" id="3">-</div>
+            <div class="celda" id="4">-</div>
+            <div class="celda" id="5">-</div>
+            <div class="celda" id="6">-</div>
+            <div class="celda" id="7">-</div>
+            <div class="celda" id="8">-</div>
+        </div>
+        
+        <div class="botones-juego">
+            <button id="btn-volver-salas" class="btn-juego">Volver a Salas</button>
+        </div>
+    </div>
+
+    <script>
+        // Variables importantes
+        let socket = null;
+        let salaActual = null;
+        let miSimbolo = null;
+        let miNombre = '';
+        let tablero = ['', '', '', '', '', '', '', '', ''];
+        let turnoActual = 'X';
+
+        // Elementos HTML
+        const pantallaInicio = document.getElementById('pantalla-inicio');
+        const pantallaSalas = document.getElementById('pantalla-salas');
+        const pantallaJuego = document.getElementById('pantalla-juego');
+        const nombreUsuarioInput = document.getElementById('nombre-usuario');
+        const btnJugar = document.getElementById('btn-jugar');
+        const btnCrearSala = document.getElementById('btn-crear-sala');
+        const btnUnirseSala = document.getElementById('btn-unirse-sala');
+        const codigoSalaInput = document.getElementById('codigo-sala');
+        const btnVolverInicio = document.getElementById('btn-volver-inicio');
+        const btnVolverSalas = document.getElementById('btn-volver-salas');
+        const estadoJuego = document.getElementById('estado-juego');
+        const celdas = document.querySelectorAll('.celda');
+        const nombreX = document.getElementById('nombre-x');
+        const nombreO = document.getElementById('nombre-o');
+
+        // 1. Cuando haces clic en JUGAR
+        btnJugar.addEventListener('click', () => {
+            miNombre = nombreUsuarioInput.value.trim();
+            if (miNombre === '') {
+                alert('Por favor ingresa tu nombre');
+                return;
+            }
+            
+            // Conectar al servidor
+            socket = io();
+            
+            // Configurar eventos del servidor
+            configurarEventosSocket();
+            
+            pantallaInicio.style.display = 'none';
+            pantallaSalas.style.display = 'flex';
+        });
+
+        // 2. Configurar comunicación con el servidor
+        function configurarEventosSocket() {
+            // Cuando creas una sala
+            socket.on('sala-creada', (idSala) => {
+                salaActual = idSala;
+                miSimbolo = 'X';
+                pantallaSalas.style.display = 'none';
+                pantallaJuego.style.display = 'flex';
+                nombreX.textContent = miNombre + ' (Tú)';
+                estadoJuego.textContent = 'Esperando que se una otro jugador...';
+            });
+
+            // Cuando te unes a una sala
+            socket.on('unido-sala', (data) => {
+                salaActual = data.idSala;
+                miSimbolo = data.simbolo;
+                pantallaSalas.style.display = 'none';
+                pantallaJuego.style.display = 'flex';
+                
+                if (miSimbolo === 'O') {
+                    nombreO.textContent = miNombre + ' (Tú)';
+                }
+                
+                estadoJuego.textContent = '¡Juego comenzado! Turno de: X';
+            });
+
+            // Cuando alguien se une a tu sala
+            socket.on('jugador-unido', (sala) => {
+                // Actualizar nombres de jugadores
+                if (sala.jugadores[0]) {
+                    nombreX.textContent = sala.jugadores[0].nombre + (miSimbolo === 'X' ? ' (Tú)' : ' (Rival)');
+                }
+                if (sala.jugadores[1]) {
+                    nombreO.textContent = sala.jugadores[1].nombre + (miSimbolo === 'O' ? ' (Tú)' : ' (Rival)');
+                }
+                
+                estadoJuego.textContent = '¡Juego comenzado! Turno de: X';
+            });
+
+            // Cuando el tablero se actualiza
+            socket.on('tablero-actualizado', (data) => {
+                tablero = data.tablero;
+                turnoActual = data.turno;
+                
+                // Actualizar la vista del tablero
+                actualizarTableroVista();
+                
+                // Actualizar estado del juego
+                estadoJuego.textContent = 'Turno de: ' + turnoActual;
+                
+                // Resaltar jugador activo
+                if (turnoActual === 'X') {
+                    document.getElementById('jugador-x').classList.add('activo');
+                    document.getElementById('jugador-o').classList.remove('activo');
+                } else {
+                    document.getElementById('jugador-o').classList.add('activo');
+                    document.getElementById('jugador-x').classList.remove('activo');
+                }
+            });
+        }
+
+        // 3. Actualizar cómo se ve el tablero
+        function actualizarTableroVista() {
+            celdas.forEach((celda, index) => {
+                celda.textContent = tablero[index] || '-';
+                celda.className = 'celda';
+                if (tablero[index] === 'X') {
+                    celda.classList.add('x');
+                } else if (tablero[index] === 'O') {
+                    celda.classList.add('o');
+                }
+            });
+        }
+
+        // 4. Cuando haces clic en una celda
+        celdas.forEach(celda => {
+            celda.addEventListener('click', () => {
+                if (!salaActual || turnoActual !== miSimbolo) return;
+                
+                const indice = parseInt(celda.id);
+                
+                // Enviar movimiento al servidor
+                socket.emit('mover', {
+                    idSala: salaActual,
+                    casilla: indice
+                });
+            });
+        });
+
+        // 5. Botones de crear y unirse a salas
+        btnCrearSala.addEventListener('click', () => {
+            socket.emit('crear-sala', miNombre);
+        });
+
+        btnUnirseSala.addEventListener('click', () => {
+            const codigo = codigoSalaInput.value.trim().toUpperCase();
+            if (codigo === '') {
+                alert('Ingresa un código de sala');
+                return;
+            }
+            
+            socket.emit('unirse-sala', {
+                idSala: codigo,
+                nombreJugador: miNombre
+            });
+        });
+
+        // 6. Botones para volver
+        btnVolverInicio.addEventListener('click', () => {
+            pantallaSalas.style.display = 'none';
+            pantallaInicio.style.display = 'flex';
+        });
+
+        btnVolverSalas.addEventListener('click', () => {
+            pantallaJuego.style.display = 'none';
+            pantallaSalas.style.display = 'flex';
+        });
+    </script>
+</body>
+</html>
